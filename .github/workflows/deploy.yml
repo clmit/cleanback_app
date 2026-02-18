@@ -24,12 +24,13 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
           
       - name: Install dependencies
         run: flutter pub get
         
-      - name: Build web
-        run: flutter build web --release
+      - name: Build web with base-href
+        run: flutter build web --release --base-href="/cleanback_app/"
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
