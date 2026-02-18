@@ -1,0 +1,38 @@
+Launching lib\main.dart on Chrome in debug mode...
+Waiting for connection from debug service on Chrome...             17,0s
+
+Flutter run key commands.
+r Hot reload. 
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+Debug service listening on ws://127.0.0.1:50536/nIiyfbHVAPs=/ws
+A Dart VM Service on Chrome is available at: http://127.0.0.1:50536/nIiyfbHVAPs=
+The Flutter DevTools debugger and profiler on Chrome is available at: http://127.0.0.1:50536/nIiyfbHVAPs=/devtools/?uri=ws://127.0.0.1:50536/nIiyfbHVAPs=/ws
+Starting application from main method in: org-dartlang-app:/web_entrypoint.dart.
+══╡ EXCEPTION CAUGHT BY WIDGETS ╞═══════════════════════════════════════════════════════════════════
+The following message was thrown:
+Warning: This application's locale, ru_RU, is not supported by all of its localization delegates.
+
+• A MaterialLocalizations delegate that supports the ru_RU locale was not found.
+• A CupertinoLocalizations delegate that supports the ru_RU locale was not found.
+
+The declared supported locales for this app are: ru_RU
+
+See https://flutter.dev/to/internationalization/ for more information about configuring an app's
+locale, supportedLocales, and localizationsDelegates parameters.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
+Another exception was thrown: No MaterialLocalizations found.
