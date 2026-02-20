@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../domain/entities/order_status.dart';
 import '../../providers/repository_providers.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/news_provider.dart';
 import '../../widgets/widgets.dart';
+import '../profile/profile_screen.dart';
 
 /// Главный экран приложения
 class HomeScreen extends StatefulWidget {
@@ -17,10 +19,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _authService = AuthService();
+  String? _customerName;
+  String? _customerPhone;
+
   @override
   void initState() {
     super.initState();
-    // Данные уже загружены при инициализации приложения
+    _loadCustomerData();
+  }
+
+  Future<void> _loadCustomerData() async {
+    final customer = await _authService.getCurrentCustomer();
+    if (customer != null && mounted) {
+      setState(() {
+        _customerName = customer.name;
+        _customerPhone = customer.formattedPhone;
+      });
+    }
   }
 
   @override
@@ -29,23 +45,68 @@ class _HomeScreenState extends State<HomeScreen> {
       listenable: ordersNotifier,
       builder: (context, _) {
         final ordersState = ordersNotifier;
-        
+
         return ListenableBuilder(
           listenable: newsNotifier,
           builder: (context, _) {
             final newsState = newsNotifier;
-            
+
             return Scaffold(
+              appBar: AppBar(
+                title: const Text(AppStrings.appName),
+                actions: [
+                  // Кнопка профиля
+                  IconButton(
+                    icon: const Icon(Icons.account_circle_outlined),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ProfileScreen(),
+                        ),
+                      ).then((_) => _loadCustomerData());
+                    },
+                  ),
+                  // Кнопка выхода
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (value) async {
+                      if (value == 'logout') {
+                        await _showLogoutDialog(context);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'logout',
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, color: Colors.red),
+                            SizedBox(width: 12),
+                            Text('Выйти', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
               body: SafeArea(
                 child: CustomScrollView(
                   slivers: [
-                    // App Bar
+                    // Приветствие
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (_customerName != null) ...[
+                              Text(
+                                'Здравствуйте, ${_customerName ?? 'Клиент'}!',
+                                style: AppTextStyles.body,
+                              ),
+                              const SizedBox(height: 8),
+                            ],
                             Text(
                               AppStrings.homeTitle,
                               style: AppTextStyles.h1,
@@ -306,5 +367,39 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showLogoutDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Выйти из аккаунта?'),
+        content: const Text('Вы будете перенаправлены на экран входа'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Выйти'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _authService.logout();
+      
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    }
   }
 }

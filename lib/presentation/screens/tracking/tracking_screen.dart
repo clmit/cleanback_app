@@ -2,33 +2,83 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../domain/entities/order_status.dart';
-import '../../providers/repository_providers.dart';
-import '../../providers/orders_provider.dart';
 import '../../widgets/widgets.dart';
+import '../profile/order_detail_screen.dart';
 
 /// Экран отслеживания заказов
-class TrackingScreen extends StatelessWidget {
+class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: ordersNotifier,
-      builder: (context, _) {
-        final ordersState = ordersNotifier;
+  State<TrackingScreen> createState() => _TrackingScreenState();
+}
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text(AppStrings.trackingTitle),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => Navigator.pop(context),
-            ),
+class _TrackingScreenState extends State<TrackingScreen> {
+  final _authService = AuthService();
+  final _supabase = SupabaseService();
+  
+  List<Map<String, dynamic>> _orders = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final orders = await _authService.getOrders();
+      
+      if (mounted) {
+        setState(() {
+          _orders = orders;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(AppStrings.trackingTitle),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadOrders,
           ),
-          body: ordersState.status == OrdersListStatus.loading
-              ? const LoadingIndicator(message: 'Загрузка заказов...')
-              : ordersState.orders.isEmpty
+        ],
+      ),
+      body: _isLoading
+          ? const LoadingIndicator(message: 'Загрузка заказов...')
+          : _error != null
+              ? CustomErrorWidget(
+                  message: _error!,
+                  onRetry: _loadOrders,
+                )
+              : _orders.isEmpty
                   ? EmptyState(
                       icon: Icons.inventory_2_outlined,
                       title: AppStrings.noOrders,
@@ -40,201 +90,123 @@ class TrackingScreen extends StatelessWidget {
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: () => ordersNotifier.loadOrders(),
+                      onRefresh: _loadOrders,
                       child: ListView.builder(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: ordersState.orders.length,
+                        itemCount: _orders.length,
                         itemBuilder: (context, index) {
-                          final order = ordersState.orders[index];
-                          return OrderCard(
-                            orderNumber: order.orderNumber,
-                            status: order.status.name,
-                            createdAt: order.createdAt,
-                            itemsCount: order.items.fold(
-                              0,
-                              (sum, item) => sum + item.quantity,
-                            ),
-                            totalAmount: order.totalAmount ?? order.calculateTotal(),
-                            onTap: () => _showOrderDetails(context, order),
-                          );
+                          final order = _orders[index];
+                          return _buildOrderCard(order);
                         },
                       ),
                     ),
-        );
-      },
     );
   }
 
-  void _showOrderDetails(BuildContext context, dynamic order) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.all(24),
+  Widget _buildOrderCard(Map<String, dynamic> order) {
+    final orderNumber = order['order_number'].toString();
+    final status = order['status'] as String? ?? 'new';
+    final totalAmount = (order['total_amount'] as num?)?.toInt() ?? 0;
+    final date = DateTime.parse(order['date'] as String);
+    
+    String statusName;
+    Color statusColor;
+    
+    switch (status.toLowerCase()) {
+      case 'new':
+        statusName = 'Новый';
+        statusColor = AppColors.warning;
+        break;
+      case 'get':
+        statusName = 'Принят';
+        statusColor = AppColors.warning;
+        break;
+      case 'work':
+        statusName = 'В работе';
+        statusColor = AppColors.warning;
+        break;
+      case 'done':
+        statusName = 'Готов';
+        statusColor = AppColors.success;
+        break;
+      case 'completed':
+        statusName = 'Доставлен';
+        statusColor = AppColors.success;
+        break;
+      default:
+        statusName = status;
+        statusColor = AppColors.textSecondary;
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => OrderDetailScreen(order: order),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Ручка для перетаскивания
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.divider,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Номер заказа и статус
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${AppStrings.orderNumber}${order.orderNumber}',
-                    style: AppTextStyles.h2,
-                  ),
-                  _buildStatusChip(order.status),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // Timeline статусов
-              _buildStatusTimeline(order.status),
-
-              const SizedBox(height: 24),
-
-              // Состав заказа
-              Text(
-                'Состав заказа',
-                style: AppTextStyles.h3,
-              ),
-              const SizedBox(height: 12),
-              ...order.items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          item.cleaningType.icon,
-                          style: const TextStyle(fontSize: 24),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.cleaningType.name,
-                              style: AppTextStyles.body,
-                            ),
-                            Text(
-                              '${item.quantity} пара(-ы)',
-                              style: AppTextStyles.caption,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Text(
-                      '${(item.pricePerItem * item.quantity).toStringAsFixed(0)} ₽',
-                      style: AppTextStyles.body.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-
-              const Divider(height: 32),
-
-              // Итого
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Итого:',
+                    'Заказ №$orderNumber',
                     style: AppTextStyles.h3,
                   ),
+                  _buildStatusChip(statusName, statusColor),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.shopping_bag_outlined,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
                   Text(
-                    '${order.totalAmount?.toStringAsFixed(0) ?? order.calculateTotal().toStringAsFixed(0)} ₽',
-                    style: AppTextStyles.h1.copyWith(
+                    '1 пара',
+                    style: AppTextStyles.caption,
+                  ),
+                  const SizedBox(width: 16),
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _formatDate(date),
+                    style: AppTextStyles.caption,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$totalAmount ₽',
+                    style: AppTextStyles.h2.copyWith(
                       color: AppColors.accent,
                     ),
                   ),
+                  Icon(
+                    Icons.chevron_right,
+                    color: AppColors.textSecondary,
+                  ),
                 ],
               ),
-
-              const SizedBox(height: 24),
-
-              // Информация о доставке
-              Text(
-                'Информация о доставке',
-                style: AppTextStyles.h3,
-              ),
-              const SizedBox(height: 12),
-              _buildInfoRow(
-                Icons.location_on_outlined,
-                'Адрес забора:',
-                order.pickupAddress,
-              ),
-              if (order.returnAddress != null) ...[
-                const SizedBox(height: 8),
-                _buildInfoRow(
-                  Icons.home_outlined,
-                  'Адрес возврата:',
-                  order.returnAddress,
-                ),
-              ],
-              const SizedBox(height: 8),
-              _buildInfoRow(
-                Icons.phone_outlined,
-                'Телефон:',
-                order.contactPhone,
-              ),
-              if (order.comment != null) ...[
-                const SizedBox(height: 8),
-                _buildInfoRow(
-                  Icons.note_outlined,
-                  'Комментарий:',
-                  order.comment,
-                ),
-              ],
-
-              // Даты
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.secondaryBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildDateRow('Создан:', order.createdAt),
-                    if (order.pickupAt != null) ...[
-                      const SizedBox(height: 8),
-                      _buildDateRow('Забран:', order.pickupAt!),
-                    ],
-                    if (order.completedAt != null) ...[
-                      const SizedBox(height: 8),
-                      _buildDateRow('Завершен:', order.completedAt!),
-                    ],
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 32),
             ],
           ),
         ),
@@ -242,160 +214,42 @@ class TrackingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusChip(OrderStatus status) {
-    Color backgroundColor;
-    switch (status) {
-      case OrderStatus.isNew:
-      case OrderStatus.accepted:
-        backgroundColor = AppColors.warning;
-        break;
-      case OrderStatus.inWork:
-        backgroundColor = AppColors.warning;
-        break;
-      case OrderStatus.ready:
-        backgroundColor = AppColors.success;
-        break;
-      case OrderStatus.delivered:
-        backgroundColor = AppColors.success;
-        break;
-    }
-
+  Widget _buildStatusChip(String status, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+        ),
       ),
       child: Text(
-        status.name,
-        style: const TextStyle(
-          color: Colors.white,
+        status,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 
-  Widget _buildStatusTimeline(OrderStatus currentStatus) {
-    final statuses = OrderStatus.values;
-    final currentIndex = statuses.indexOf(currentStatus);
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
 
-    return Column(
-      children: statuses.asMap().entries.map((entry) {
-        final index = entry.key;
-        final status = entry.value;
-        final isCompleted = index <= currentIndex;
-        final isLast = index == statuses.length - 1;
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Индикатор
-            Column(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: isCompleted ? AppColors.success : AppColors.divider,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isCompleted ? AppColors.success : AppColors.divider,
-                      width: 2,
-                    ),
-                  ),
-                  child: isCompleted
-                      ? const Icon(
-                          Icons.check,
-                          size: 16,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-                if (!isLast)
-                  Container(
-                    width: 2,
-                    height: 40,
-                    color: index < currentIndex
-                        ? AppColors.success
-                        : AppColors.divider,
-                  ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            // Текст
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      status.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: isCompleted
-                            ? AppColors.primary
-                            : AppColors.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      status.description,
-                      style: AppTextStyles.caption,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String? value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          icon,
-          size: 20,
-          color: AppColors.textSecondary,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: AppTextStyles.caption,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value ?? '-',
-                style: AppTextStyles.body,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateRow(String label, DateTime date) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: AppTextStyles.caption,
-        ),
-        Text(
-          '${date.day}.${date.month}.${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-          style: AppTextStyles.body,
-        ),
-      ],
-    );
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes} мин. назад';
+      }
+      return '${difference.inHours} ч. назад';
+    } else if (difference.inDays == 1) {
+      return 'Вчера';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} дн. назад';
+    } else {
+      return '${date.day}.${date.month}.${date.year}';
+    }
   }
 }

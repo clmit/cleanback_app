@@ -3,6 +3,8 @@ import 'package:uuid/uuid.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../../domain/entities/cleaning_type.dart';
 import '../../../domain/entities/order.dart';
 import '../../../domain/entities/order_status.dart';
@@ -23,10 +25,30 @@ class _OrderScreenState extends State<OrderScreen> {
   final _returnController = TextEditingController();
   final _phoneController = TextEditingController();
   final _commentController = TextEditingController();
+  final _authService = AuthService();
 
   CleaningType? _selectedType;
   int _pairsCount = 1;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPhoneNumber();
+  }
+
+  /// Загрузка номера телефона из сессии
+  Future<void> _loadPhoneNumber() async {
+    final phone = await _authService.getPhoneNumber();
+    if (phone != null && mounted) {
+      // Форматируем номер для отображения: +7XXXXXXXXXX → 9051234567
+      String digits = phone.replaceAll(RegExp(r'[^\d]'), '');
+      if (digits.startsWith('7')) {
+        digits = digits.substring(1);
+      }
+      _phoneController.text = digits;
+    }
+  }
 
   @override
   void dispose() {
@@ -138,14 +160,25 @@ class _OrderScreenState extends State<OrderScreen> {
             TextFormField(
               controller: _phoneController,
               decoration: const InputDecoration(
-                labelText: '+7 (___) ___-__-__',
+                labelText: 'Телефон',
+                hintText: '905 123-45-67',
                 prefixIcon: Icon(Icons.phone_outlined),
+                prefixText: '+7 ',
+                helperText: 'Указан при авторизации',
               ),
               keyboardType: TextInputType.phone,
+              maxLength: 16,
               validator: (value) {
-                if (value == null || value.isEmpty || value.length < 18) {
-                  return 'Введите корректный номер телефона';
+                if (value == null || value.isEmpty) {
+                  return 'Введите номер телефона';
                 }
+                
+                // Простая проверка - считаем цифры
+                String digits = value.replaceAll(RegExp(r'[^\d]'), '');
+                if (digits.length < 10) {
+                  return 'Введите корректный номер';
+                }
+                
                 return null;
               },
             ),
@@ -300,33 +333,41 @@ class _OrderScreenState extends State<OrderScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final order = Order(
-        id: const Uuid().v4(),
-        orderNumber: '',
-        items: [
-          OrderItem(
-            id: const Uuid().v4(),
-            cleaningType: _selectedType!,
-            quantity: _pairsCount,
-            pricePerItem: _selectedType!.basePrice.toDouble(),
-          ),
-        ],
+      final supabase = SupabaseService();
+      final customerId = await _authService.getCustomerId();
+      
+      if (customerId == null) {
+        _showError('Пользователь не авторизован');
+        return;
+      }
+
+      // Генерируем номер заказа
+      final orderNumber = 'CB${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+      final totalAmount = _selectedType!.basePrice * _pairsCount;
+
+      // Создаём заказ в Supabase
+      final createdOrder = await supabase.createOrder(
+        customerId: customerId,
+        orderNumber: orderNumber,
+        totalAmount: totalAmount,
+        status: 'new',
+        items: {
+          _selectedType!.name: totalAmount,
+        },
         pickupAddress: _pickupController.text,
         returnAddress: _returnController.text.isEmpty
             ? null
             : _returnController.text,
-        contactPhone: _phoneController.text,
         comment: _commentController.text.isEmpty
             ? null
             : _commentController.text,
-        status: OrderStatus.isNew,
-        createdAt: DateTime.now(),
       );
 
-      final createdOrder = await ordersNotifier.createOrder(order);
-
       if (createdOrder != null && mounted) {
-        _showSuccess(createdOrder.orderNumber);
+        _showSuccess(orderNumber);
+        
+        // Обновляем локальный список заказов
+        await ordersNotifier.loadOrders();
       } else {
         _showError('Не удалось создать заказ');
       }

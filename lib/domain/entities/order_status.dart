@@ -46,4 +46,40 @@ extension OrderStatusExtension on OrderStatus {
         return 'Заказ доставлен';
     }
   }
+  
+  /// Ключ для базы данных (Supabase)
+  String get dbKey {
+    switch (this) {
+      case OrderStatus.isNew:
+        return 'new';
+      case OrderStatus.accepted:
+        return 'get';
+      case OrderStatus.inWork:
+        return 'work';
+      case OrderStatus.ready:
+        return 'done';
+      case OrderStatus.delivered:
+        return 'completed';
+    }
+  }
+}
+
+/// Расширение для парсинга статусов из базы данных
+extension OrderStatusDbExtension on String {
+  OrderStatus toOrderStatus() {
+    switch (this.toLowerCase()) {
+      case 'new':
+        return OrderStatus.isNew;
+      case 'get':
+        return OrderStatus.accepted;
+      case 'work':
+        return OrderStatus.inWork;
+      case 'done':
+        return OrderStatus.ready;
+      case 'completed':
+        return OrderStatus.delivered;
+      default:
+        return OrderStatus.isNew;
+    }
+  }
 }
